@@ -177,15 +177,17 @@ esp_err_t sensors_read_shtc3(shtc3_data_t *out)
         return ESP_ERR_INVALID_ARG;
     }
 
+    bool awake = false;
     esp_err_t ret = shtc3_wakeup();
     if (ret != ESP_OK) {
         return ret;
     }
+    awake = true;
 
     ret = i2c_send_cmd(s_shtc3_dev, SHTC3_CMD_MEAS_T_FIRST_NM);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "SHTC3 measure cmd failed: %s", esp_err_to_name(ret));
-        return ret;
+        goto out;
     }
 
     delay_ms_ceil(13);
@@ -194,20 +196,26 @@ esp_err_t sensors_read_shtc3(shtc3_data_t *out)
     ret = i2c_master_receive(s_shtc3_dev, raw, sizeof(raw), 1000);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "SHTC3 payload read failed: %s", esp_err_to_name(ret));
-        return ret;
+        goto out;
     }
 
     if (crc8_poly31(&raw[0], 2) != raw[2] || crc8_poly31(&raw[3], 2) != raw[5]) {
         ESP_LOGW(TAG, "SHTC3 CRC check failed");
-        return ESP_ERR_INVALID_CRC;
+        ret = ESP_ERR_INVALID_CRC;
+        goto out;
     }
 
     uint16_t t_raw = ((uint16_t)raw[0] << 8) | raw[1];
     uint16_t h_raw = ((uint16_t)raw[3] << 8) | raw[4];
     out->temperature_c = -45.0f + 175.0f * ((float)t_raw / 65535.0f);
     out->humidity_pct = 100.0f * ((float)h_raw / 65535.0f);
-    (void)shtc3_sleep();
-    return ESP_OK;
+    ret = ESP_OK;
+
+out:
+    if (awake) {
+        (void)shtc3_sleep();
+    }
+    return ret;
 }
 
 esp_err_t sensors_read_scd4x_co2(uint16_t *co2_ppm)

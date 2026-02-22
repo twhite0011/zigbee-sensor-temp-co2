@@ -1,5 +1,6 @@
 #include "zigbee.h"
 
+#include <stdatomic.h>
 #include <string.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -13,7 +14,7 @@ static char s_model_identifier[]  = "\x0E" "XIAO-SHTC3-CO2";
 #define ZIGBEE_TX_POWER_DBM            (+3)
 #define STEERING_RETRY_DELAY_MS        (30000)
 
-static bool s_joined = false;
+static atomic_bool s_joined = ATOMIC_VAR_INIT(false);
 
 static void commissioning_retry_cb(uint8_t mode_mask)
 {
@@ -26,7 +27,7 @@ static void commissioning_retry_cb(uint8_t mode_mask)
 
 bool zigbee_is_joined(void)
 {
-    return s_joined;
+    return atomic_load_explicit(&s_joined, memory_order_relaxed);
 }
 
 static int16_t celsius_to_zcl(float c)
@@ -111,35 +112,53 @@ void zigbee_report_sensor_data(const shtc3_data_t *data, uint16_t co2_ppm)
     uint16_t hum_val = pct_to_zcl(data->humidity_pct);
     float co2_val = co2_ppm_to_zcl_fraction(co2_ppm);
 
+    esp_err_t first_err = ESP_OK;
+    esp_err_t ret;
+
     esp_zb_lock_acquire(portMAX_DELAY);
-    esp_zb_zcl_set_attribute_val(
+
+    ret = esp_zb_zcl_set_attribute_val(
         EP_SENSOR,
         ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
         ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
         ATTR_TEMP_MEASURED_VALUE,
         &temp_val,
         false);
+    if (ret != ESP_OK && first_err == ESP_OK) {
+        first_err = ret;
+    }
 
-    esp_zb_zcl_set_attribute_val(
+    ret = esp_zb_zcl_set_attribute_val(
         EP_SENSOR,
         ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
         ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
         ATTR_HUM_MEASURED_VALUE,
         &hum_val,
         false);
+    if (ret != ESP_OK && first_err == ESP_OK) {
+        first_err = ret;
+    }
 
-    esp_zb_zcl_set_attribute_val(
+    ret = esp_zb_zcl_set_attribute_val(
         EP_SENSOR,
         ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT,
         ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
         ATTR_CO2_MEASURED_VALUE,
         &co2_val,
         false);
+    if (ret != ESP_OK && first_err == ESP_OK) {
+        first_err = ret;
+    }
 
     esp_zb_lock_release();
 
-    ESP_LOGI(TAG, "Reported temp=%.2f C humidity=%.2f %% co2=%u ppm",
-             data->temperature_c, data->humidity_pct, (unsigned)co2_ppm);
+    if (first_err == ESP_OK) {
+        ESP_LOGI(TAG, "Reported temp=%.2f C humidity=%.2f %% co2=%u ppm",
+                 data->temperature_c, data->humidity_pct, (unsigned)co2_ppm);
+    } else {
+        ESP_LOGW(TAG, "Failed to update one or more ZCL attributes: %s",
+                 esp_err_to_name(first_err));
+    }
 }
 
 void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
@@ -165,7 +184,7 @@ void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
                     ESP_LOGI(TAG, "Start network steering");
                     commissioning_retry_cb(ESP_ZB_BDB_MODE_NETWORK_STEERING);
                 } else {
-                    s_joined = true;
+                    atomic_store_explicit(&s_joined, true, memory_order_relaxed);
                     ESP_LOGI(TAG, "Rejoined network PAN=0x%04X CH=%d SHORT=0x%04X",
                              esp_zb_get_pan_id(), esp_zb_get_current_channel(), esp_zb_get_short_address());
                 }
@@ -177,11 +196,11 @@ void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
 
         case ESP_ZB_BDB_SIGNAL_STEERING:
             if (err == ESP_OK) {
-                s_joined = true;
+                atomic_store_explicit(&s_joined, true, memory_order_relaxed);
                 ESP_LOGI(TAG, "Joined network PAN=0x%04X CH=%d SHORT=0x%04X",
                          esp_zb_get_pan_id(), esp_zb_get_current_channel(), esp_zb_get_short_address());
             } else {
-                s_joined = false;
+                atomic_store_explicit(&s_joined, false, memory_order_relaxed);
                 ESP_LOGW(TAG, "Steering failed (%s), retrying in %d s",
                          esp_err_to_name(err), STEERING_RETRY_DELAY_MS / 1000);
                 esp_zb_scheduler_alarm(commissioning_retry_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING,
@@ -190,7 +209,7 @@ void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
             break;
 
         case ESP_ZB_ZDO_SIGNAL_LEAVE:
-            s_joined = false;
+            atomic_store_explicit(&s_joined, false, memory_order_relaxed);
             ESP_LOGW(TAG, "Left network");
             break;
 
