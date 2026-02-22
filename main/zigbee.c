@@ -8,7 +8,7 @@
 static const char *TAG = "zigbee";
 
 static char s_manufacturer_name[] = "\x03" "DIY";
-static char s_model_identifier[]  = "\x09" "XIAO-SHTC3";
+static char s_model_identifier[]  = "\x0E" "XIAO-SHTC3-CO2";
 
 #define ZIGBEE_TX_POWER_DBM            (+3)
 #define STEERING_RETRY_DELAY_MS        (30000)
@@ -37,6 +37,11 @@ static int16_t celsius_to_zcl(float c)
 static uint16_t pct_to_zcl(float pct)
 {
     return (uint16_t)(pct * 100.0f);
+}
+
+static float co2_ppm_to_zcl_fraction(uint16_t ppm)
+{
+    return (float)ppm / 1000000.0f;
 }
 
 void zigbee_register_endpoints(void)
@@ -74,11 +79,19 @@ void zigbee_register_endpoints(void)
     };
     esp_zb_attribute_list_t *hum_attr = esp_zb_humidity_meas_cluster_create(&hum_cfg);
 
+    esp_zb_carbon_dioxide_measurement_cluster_cfg_t co2_cfg = {
+        .measured_value = ESP_ZB_ZCL_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_DEFAULT,
+        .min_measured_value = 0.0004f,
+        .max_measured_value = 0.0050f,
+    };
+    esp_zb_attribute_list_t *co2_attr = esp_zb_carbon_dioxide_measurement_cluster_create(&co2_cfg);
+
     esp_zb_cluster_list_t *cluster_list = esp_zb_zcl_cluster_list_create();
     esp_zb_cluster_list_add_basic_cluster(cluster_list, basic_attr, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
     esp_zb_cluster_list_add_identify_cluster(cluster_list, identify_attr, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
     esp_zb_cluster_list_add_temperature_meas_cluster(cluster_list, temp_attr, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
     esp_zb_cluster_list_add_humidity_meas_cluster(cluster_list, hum_attr, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    esp_zb_cluster_list_add_carbon_dioxide_measurement_cluster(cluster_list, co2_attr, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
     esp_zb_endpoint_config_t ep_cfg = {
         .endpoint = EP_SENSOR,
@@ -92,10 +105,11 @@ void zigbee_register_endpoints(void)
     ESP_LOGI(TAG, "Sensor endpoint registered");
 }
 
-void zigbee_report_sensor_data(const shtc3_data_t *data)
+void zigbee_report_sensor_data(const shtc3_data_t *data, uint16_t co2_ppm)
 {
     int16_t temp_val = celsius_to_zcl(data->temperature_c);
     uint16_t hum_val = pct_to_zcl(data->humidity_pct);
+    float co2_val = co2_ppm_to_zcl_fraction(co2_ppm);
 
     esp_zb_lock_acquire(portMAX_DELAY);
     esp_zb_zcl_set_attribute_val(
@@ -114,10 +128,18 @@ void zigbee_report_sensor_data(const shtc3_data_t *data)
         &hum_val,
         false);
 
-    // Rely on standard Zigbee configured reporting from the coordinator.
+    esp_zb_zcl_set_attribute_val(
+        EP_SENSOR,
+        ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT,
+        ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+        ATTR_CO2_MEASURED_VALUE,
+        &co2_val,
+        false);
+
     esp_zb_lock_release();
 
-    ESP_LOGI(TAG, "Reported temp=%.2f C humidity=%.2f %%", data->temperature_c, data->humidity_pct);
+    ESP_LOGI(TAG, "Reported temp=%.2f C humidity=%.2f %% co2=%u ppm",
+             data->temperature_c, data->humidity_pct, (unsigned)co2_ppm);
 }
 
 void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
