@@ -18,12 +18,25 @@ Minimal ESP-IDF Zigbee end-device for **Seeed XIAO ESP32-C6** + **SHTC3** + **SC
 - XIAO GND -> SHTC3 GND + SCD4X GND
 
 ## Build and flash
+Prerequisites:
+- ESP-IDF `v5.5.x` installed locally
+- Serial port access to `/dev/ttyACM0` (on Linux, user in `dialout`/`uucp`)
+
 ```bash
-cd /home/nonya/gits/zigbee-sensor-temp-co2
-source /home/nonya/gits/esp-idf/export.sh
+git clone https://github.com/twhite0011/zigbee-sensor-temp-co2.git
+cd zigbee-sensor-temp-co2
+source ~/esp/esp-idf/export.sh
 idf.py set-target esp32c6
 idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
+```
+
+If monitor fails in a non-interactive shell, run:
+
+```bash
+source ~/esp/esp-idf/export.sh
+idf.py -p /dev/ttyACM0 flash
+idf.py -p /dev/ttyACM0 monitor
 ```
 
 ## Zigbee2MQTT setup and pairing
@@ -35,9 +48,21 @@ idf.py -p /dev/ttyACM0 flash monitor
 2. Restart Zigbee2MQTT.
 3. Enable `permit_join` in Zigbee2MQTT.
 4. Flash/reboot device.
-5. Wait for interview; device should expose temperature, humidity, and co2 entities.
+5. Wait for interview; device should expose temperature, humidity, and CO2 entities.
+
+Expected runtime logs after join:
+- `zigbee: Rejoined network PAN=... CH=... SHORT=...` (or joined network log)
+- `sensors: SHTC3 initialized on I2C 0x70`
+- `sensors: SCD4X initialized on I2C 0x62`
+- `zigbee: Reported temp=<temp> C humidity=<humidity> % co2=<ppm> ppm`
 
 ## Notes
 - Firmware currently uses Zigbee channel **11** only.
 - SCD4X runs periodic measurement mode and publishes latest ppm value each report cycle.
 - If pairing fails, run `idf.py -p /dev/ttyACM0 erase-flash flash`.
+
+## License
+This project source is licensed under the MIT License. See `LICENSE`.
+
+## Third-party components
+`espressif/esp-zigbee-lib` and `espressif/esp-zboss-lib` are resolved by ESP-IDF Component Manager from `main/idf_component.yml` and are not required to be committed in this repository. They keep their own upstream licenses.
