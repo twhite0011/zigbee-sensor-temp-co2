@@ -59,6 +59,7 @@ Expected runtime logs after join:
 ## Notes
 - Firmware currently uses Zigbee channel **11** only.
 - SCD4X runs periodic measurement mode and publishes latest ppm value each report cycle.
+- Coordinator destination endpoint is discovered dynamically via ZDO Active EP request on join/rejoin (fallback endpoint: `1`).
 - If pairing fails, run `idf.py -p /dev/ttyACM0 erase-flash flash`.
 
 ## License

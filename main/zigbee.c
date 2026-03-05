@@ -1,7 +1,6 @@
 #include "zigbee.h"
 
 #include <stdatomic.h>
-#include <string.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "zcl/esp_zigbee_zcl_command.h"
@@ -15,16 +14,73 @@ static char s_model_identifier[]  = "\x0E" "XIAO-SHTC3-CO2";
 #define ZIGBEE_TX_POWER_DBM            (+3)
 #define STEERING_RETRY_DELAY_MS        (30000)
 #define COORDINATOR_SHORT_ADDR         0x0000
-#define COORDINATOR_ENDPOINT           1
+#define DEFAULT_COORDINATOR_ENDPOINT   1
 
 static atomic_bool s_joined = ATOMIC_VAR_INIT(false);
+static atomic_uchar s_coordinator_endpoint = ATOMIC_VAR_INIT(DEFAULT_COORDINATOR_ENDPOINT);
+
+static uint8_t coordinator_endpoint_get(void)
+{
+    uint8_t endpoint = atomic_load_explicit(&s_coordinator_endpoint, memory_order_relaxed);
+    if (endpoint == 0) {
+        endpoint = DEFAULT_COORDINATOR_ENDPOINT;
+    }
+    return endpoint;
+}
+
+static void coordinator_endpoint_set(uint8_t endpoint)
+{
+    if (endpoint != 0) {
+        atomic_store_explicit(&s_coordinator_endpoint, endpoint, memory_order_relaxed);
+    }
+}
+
+static void coordinator_active_ep_cb(esp_zb_zdp_status_t zdo_status,
+                                     uint8_t ep_count,
+                                     uint8_t *ep_id_list,
+                                     void *user_ctx)
+{
+    (void)user_ctx;
+
+    if (zdo_status != ESP_ZB_ZDP_STATUS_SUCCESS || ep_count == 0 || ep_id_list == NULL) {
+        ESP_LOGW(TAG, "Active EP discovery failed status=%d count=%u, keeping endpoint %u",
+                 zdo_status, (unsigned)ep_count, (unsigned)coordinator_endpoint_get());
+        return;
+    }
+
+    uint8_t selected_ep = 0;
+    for (uint8_t i = 0; i < ep_count; i++) {
+        if (ep_id_list[i] != 0) {
+            selected_ep = ep_id_list[i];
+            break;
+        }
+    }
+
+    if (selected_ep == 0) {
+        ESP_LOGW(TAG, "Active EP response had only invalid endpoints, keeping endpoint %u",
+                 (unsigned)coordinator_endpoint_get());
+        return;
+    }
+
+    coordinator_endpoint_set(selected_ep);
+    ESP_LOGI(TAG, "Coordinator endpoint discovered: %u", (unsigned)selected_ep);
+}
+
+static void discover_coordinator_endpoint(void)
+{
+    esp_zb_zdo_active_ep_req_param_t req = {
+        .addr_of_interest = COORDINATOR_SHORT_ADDR,
+    };
+
+    esp_zb_zdo_active_ep_req(&req, coordinator_active_ep_cb, NULL);
+}
 
 static esp_err_t send_one_shot_report(uint16_t cluster_id, uint16_t attribute_id)
 {
     esp_zb_zcl_report_attr_cmd_t cmd_req = {
         .zcl_basic_cmd = {
             .dst_addr_u.addr_short = COORDINATOR_SHORT_ADDR,
-            .dst_endpoint = COORDINATOR_ENDPOINT,
+            .dst_endpoint = coordinator_endpoint_get(),
             .src_endpoint = EP_SENSOR,
         },
         .address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT,
@@ -225,6 +281,7 @@ void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
                     atomic_store_explicit(&s_joined, true, memory_order_relaxed);
                     ESP_LOGI(TAG, "Rejoined network PAN=0x%04X CH=%d SHORT=0x%04X",
                              esp_zb_get_pan_id(), esp_zb_get_current_channel(), esp_zb_get_short_address());
+                    discover_coordinator_endpoint();
                 }
             } else {
                 ESP_LOGW(TAG, "BDB start/reboot status error: %s", esp_err_to_name(err));
@@ -237,8 +294,10 @@ void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
                 atomic_store_explicit(&s_joined, true, memory_order_relaxed);
                 ESP_LOGI(TAG, "Joined network PAN=0x%04X CH=%d SHORT=0x%04X",
                          esp_zb_get_pan_id(), esp_zb_get_current_channel(), esp_zb_get_short_address());
+                discover_coordinator_endpoint();
             } else {
                 atomic_store_explicit(&s_joined, false, memory_order_relaxed);
+                coordinator_endpoint_set(DEFAULT_COORDINATOR_ENDPOINT);
                 ESP_LOGW(TAG, "Steering failed (%s), retrying in %d s",
                          esp_err_to_name(err), STEERING_RETRY_DELAY_MS / 1000);
                 esp_zb_scheduler_alarm(commissioning_retry_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING,
@@ -248,6 +307,7 @@ void zigbee_signal_handler(esp_zb_app_signal_t *signal_s)
 
         case ESP_ZB_ZDO_SIGNAL_LEAVE:
             atomic_store_explicit(&s_joined, false, memory_order_relaxed);
+            coordinator_endpoint_set(DEFAULT_COORDINATOR_ENDPOINT);
             ESP_LOGW(TAG, "Left network");
             break;
 
