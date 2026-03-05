@@ -4,6 +4,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "zcl/esp_zigbee_zcl_command.h"
 #include "zdo/esp_zigbee_zdo_command.h"
 
 static const char *TAG = "zigbee";
@@ -13,8 +14,30 @@ static char s_model_identifier[]  = "\x0E" "XIAO-SHTC3-CO2";
 
 #define ZIGBEE_TX_POWER_DBM            (+3)
 #define STEERING_RETRY_DELAY_MS        (30000)
+#define COORDINATOR_SHORT_ADDR         0x0000
+#define COORDINATOR_ENDPOINT           1
 
 static atomic_bool s_joined = ATOMIC_VAR_INIT(false);
+
+static esp_err_t send_one_shot_report(uint16_t cluster_id, uint16_t attribute_id)
+{
+    esp_zb_zcl_report_attr_cmd_t cmd_req = {
+        .zcl_basic_cmd = {
+            .dst_addr_u.addr_short = COORDINATOR_SHORT_ADDR,
+            .dst_endpoint = COORDINATOR_ENDPOINT,
+            .src_endpoint = EP_SENSOR,
+        },
+        .address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT,
+        .clusterID = cluster_id,
+        .manuf_specific = 0,
+        .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_CLI,
+        .dis_default_resp = 1,
+        .manuf_code = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC,
+        .attributeID = attribute_id,
+    };
+
+    return esp_zb_zcl_report_attr_cmd_req(&cmd_req);
+}
 
 static void commissioning_retry_cb(uint8_t mode_mask)
 {
@@ -146,6 +169,21 @@ void zigbee_report_sensor_data(const shtc3_data_t *data, uint16_t co2_ppm)
         ATTR_CO2_MEASURED_VALUE,
         &co2_val,
         false);
+    if (ret != ESP_OK && first_err == ESP_OK) {
+        first_err = ret;
+    }
+
+    ret = send_one_shot_report(ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ATTR_TEMP_MEASURED_VALUE);
+    if (ret != ESP_OK && first_err == ESP_OK) {
+        first_err = ret;
+    }
+
+    ret = send_one_shot_report(ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ATTR_HUM_MEASURED_VALUE);
+    if (ret != ESP_OK && first_err == ESP_OK) {
+        first_err = ret;
+    }
+
+    ret = send_one_shot_report(ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ATTR_CO2_MEASURED_VALUE);
     if (ret != ESP_OK && first_err == ESP_OK) {
         first_err = ret;
     }
