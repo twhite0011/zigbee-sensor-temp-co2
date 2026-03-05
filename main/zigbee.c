@@ -11,7 +11,7 @@ static const char *TAG = "zigbee";
 static char s_manufacturer_name[] = "\x03" "DIY";
 static char s_model_identifier[]  = "\x0E" "XIAO-SHTC3-CO2";
 
-#define ZIGBEE_TX_POWER_DBM            (+3)
+#define ZIGBEE_TX_POWER_DBM            (+8)
 #define STEERING_RETRY_DELAY_MS        (30000)
 #define COORDINATOR_SHORT_ADDR         0x0000
 #define DEFAULT_COORDINATOR_ENDPOINT   1
@@ -49,11 +49,23 @@ static void coordinator_active_ep_cb(esp_zb_zdp_status_t zdo_status,
     }
 
     uint8_t selected_ep = 0;
+
+    // Prefer coordinator HA endpoint 1 when present.
+    for (uint8_t i = 0; i < ep_count; i++) {
+        if (ep_id_list[i] == DEFAULT_COORDINATOR_ENDPOINT) {
+            selected_ep = ep_id_list[i];
+            break;
+        }
+    }
+
+    // Fallback: first valid non-zero endpoint.
+    if (selected_ep == 0) {
     for (uint8_t i = 0; i < ep_count; i++) {
         if (ep_id_list[i] != 0) {
             selected_ep = ep_id_list[i];
             break;
         }
+    }
     }
 
     if (selected_ep == 0) {
