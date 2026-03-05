@@ -48,6 +48,8 @@ static void zigbee_task(void *arg)
 
 static void sensor_task(void *arg)
 {
+    uint32_t scd4x_not_ready_streak = 0;
+
     while (!zigbee_is_joined()) {
         ESP_LOGI(TAG, "Waiting for Zigbee join...");
         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -69,13 +71,30 @@ static void sensor_task(void *arg)
             esp_err_t co2_ret = sensors_read_scd4x_co2(&co2_ppm);
 
             if (th_ret == ESP_OK && co2_ret == ESP_OK) {
+                if (scd4x_not_ready_streak > 0) {
+                    ESP_LOGI(TAG, "SCD4X data-ready recovered after %lu consecutive misses",
+                             (unsigned long)scd4x_not_ready_streak);
+                    scd4x_not_ready_streak = 0;
+                }
                 zigbee_report_sensor_data(&data, co2_ppm);
             } else {
                 if (th_ret != ESP_OK) {
                     ESP_LOGW(TAG, "SHTC3 read failed: %s", esp_err_to_name(th_ret));
                 }
                 if (co2_ret != ESP_OK) {
-                    ESP_LOGW(TAG, "SCD4X CO2 read failed: %s", esp_err_to_name(co2_ret));
+                    if (co2_ret == ESP_ERR_NOT_FOUND) {
+                        scd4x_not_ready_streak++;
+                        if (scd4x_not_ready_streak >= 5) {
+                            ESP_LOGW(TAG, "SCD4X data not ready for %lu consecutive reads",
+                                     (unsigned long)scd4x_not_ready_streak);
+                        } else {
+                            ESP_LOGI(TAG, "SCD4X data not ready (%lu/5)",
+                                     (unsigned long)scd4x_not_ready_streak);
+                        }
+                    } else {
+                        scd4x_not_ready_streak = 0;
+                        ESP_LOGW(TAG, "SCD4X CO2 read failed: %s", esp_err_to_name(co2_ret));
+                    }
                 }
             }
         }
