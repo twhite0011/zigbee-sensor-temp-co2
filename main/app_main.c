@@ -5,6 +5,7 @@
 
 #include "esp_zigbee_core.h"
 #include "platform/esp_zigbee_platform.h"
+#include "sdkconfig.h"
 
 #include "zigbee.h"
 #include "sensors.h"
@@ -48,7 +49,9 @@ static void zigbee_task(void *arg)
 
 static void sensor_task(void *arg)
 {
+#if CONFIG_APP_ENABLE_CO2_SENSOR
     uint32_t scd4x_not_ready_streak = 0;
+#endif
 
     while (!zigbee_is_joined()) {
         ESP_LOGI(TAG, "Waiting for Zigbee join...");
@@ -65,9 +68,10 @@ static void sensor_task(void *arg)
     while (true) {
         if (zigbee_is_joined()) {
             shtc3_data_t data;
-            uint16_t co2_ppm = 0;
-
             esp_err_t th_ret = sensors_read_shtc3(&data);
+
+#if CONFIG_APP_ENABLE_CO2_SENSOR
+            uint16_t co2_ppm = 0;
             esp_err_t co2_ret = sensors_read_scd4x_co2(&co2_ppm);
 
             if (th_ret == ESP_OK && co2_ret == ESP_OK) {
@@ -76,7 +80,7 @@ static void sensor_task(void *arg)
                              (unsigned long)scd4x_not_ready_streak);
                     scd4x_not_ready_streak = 0;
                 }
-                zigbee_report_sensor_data(&data, co2_ppm);
+                zigbee_report_temp_humidity_co2(&data, co2_ppm);
             } else {
                 if (th_ret != ESP_OK) {
                     ESP_LOGW(TAG, "SHTC3 read failed: %s", esp_err_to_name(th_ret));
@@ -97,6 +101,13 @@ static void sensor_task(void *arg)
                     }
                 }
             }
+#else
+            if (th_ret == ESP_OK) {
+                zigbee_report_temp_humidity(&data);
+            } else {
+                ESP_LOGW(TAG, "SHTC3 read failed: %s", esp_err_to_name(th_ret));
+            }
+#endif
         }
         vTaskDelay(pdMS_TO_TICKS(REPORT_INTERVAL_MS));
     }
@@ -126,7 +137,11 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
 
+#if CONFIG_APP_ENABLE_CO2_SENSOR
     ESP_LOGI(TAG, "Starting XIAO ESP32-C6 SHTC3 + SCD4X Zigbee sensor (30 s reporting)");
+#else
+    ESP_LOGI(TAG, "Starting XIAO ESP32-C6 SHTC3 Zigbee sensor (CO2 disabled, 30 s reporting)");
+#endif
 
     xTaskCreate(zigbee_task, "zigbee", 8192, NULL, 5, NULL);
     xTaskCreate(sensor_task, "sensor", 8192, NULL, 4, NULL);

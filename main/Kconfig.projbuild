@@ -1,0 +1,10 @@
+menu "Application Config"
+
+config APP_ENABLE_CO2_SENSOR
+    bool "Enable SCD4X CO2 sensor"
+    default y
+    help
+        Enable support for an SCD4X CO2 sensor. Disable this for
+        temperature/humidity-only hardware variants.
+
+endmenu

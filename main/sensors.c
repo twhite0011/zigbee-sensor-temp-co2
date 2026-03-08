@@ -5,22 +5,27 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "sensors";
 
 static i2c_master_bus_handle_t s_i2c_bus = NULL;
 static i2c_master_dev_handle_t s_shtc3_dev = NULL;
+#if CONFIG_APP_ENABLE_CO2_SENSOR
 static i2c_master_dev_handle_t s_scd4x_dev = NULL;
+#endif
 
 #define SHTC3_CMD_WAKEUP            0x3517
 #define SHTC3_CMD_SLEEP             0xB098
 #define SHTC3_CMD_MEAS_T_FIRST_NM   0x7866
 
+#if CONFIG_APP_ENABLE_CO2_SENSOR
 #define SCD4X_CMD_START_PERIODIC    0x21B1
 #define SCD4X_CMD_STOP_PERIODIC     0x3F86
 #define SCD4X_CMD_REINIT            0x3646
 #define SCD4X_CMD_DATA_READY        0xE4B8
 #define SCD4X_CMD_READ_MEASUREMENT  0xEC05
+#endif
 
 static uint8_t crc8_poly31(const uint8_t *data, size_t len)
 {
@@ -105,6 +110,7 @@ static esp_err_t setup_i2c_once(void)
         }
     }
 
+#if CONFIG_APP_ENABLE_CO2_SENSOR
     ret = i2c_master_probe(s_i2c_bus, SCD4X_I2C_ADDR, 1000);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "SCD4X probe at 0x%02X failed: %s", SCD4X_I2C_ADDR, esp_err_to_name(ret));
@@ -124,6 +130,7 @@ static esp_err_t setup_i2c_once(void)
             return ret;
         }
     }
+#endif
 
     return ESP_OK;
 }
@@ -142,6 +149,7 @@ esp_err_t sensors_init(void)
         return ret;
     }
 
+#if CONFIG_APP_ENABLE_CO2_SENSOR
     // SCD4X can take up to 1s after power-up before command acceptance.
     delay_ms_ceil(1000);
 
@@ -165,9 +173,14 @@ esp_err_t sensors_init(void)
 
     // Wait for first periodic sample to become available.
     delay_ms_ceil(5500);
+#endif
 
     ESP_LOGI(TAG, "SHTC3 initialized on I2C 0x%02X", SHTC3_I2C_ADDR);
+#if CONFIG_APP_ENABLE_CO2_SENSOR
     ESP_LOGI(TAG, "SCD4X initialized on I2C 0x%02X", SCD4X_I2C_ADDR);
+#else
+    ESP_LOGI(TAG, "CO2 sensor disabled by config");
+#endif
     return ESP_OK;
 }
 
@@ -220,6 +233,7 @@ out:
 
 esp_err_t sensors_read_scd4x_co2(uint16_t *co2_ppm)
 {
+#if CONFIG_APP_ENABLE_CO2_SENSOR
     if (co2_ppm == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -271,4 +285,8 @@ esp_err_t sensors_read_scd4x_co2(uint16_t *co2_ppm)
 
     *co2_ppm = ((uint16_t)raw[0] << 8) | raw[1];
     return ESP_OK;
+#else
+    (void)co2_ppm;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }

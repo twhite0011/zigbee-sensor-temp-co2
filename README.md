@@ -8,7 +8,7 @@ Minimal ESP-IDF Zigbee end-device for **Seeed XIAO ESP32-C6** + **SHTC3** + **SC
   - Temperature (cluster `0x0402`)
   - Humidity (cluster `0x0405`)
   - Carbon dioxide (cluster `0x040D`)
-- Reporting interval: **30 seconds**
+- Sensor update interval: **30 seconds** (publish cadence follows coordinator reporting config)
 - Includes external Zigbee2MQTT converter: `z2m_converter.js`
 
 ## Wiring (I2C)
@@ -49,18 +49,21 @@ idf.py -p /dev/ttyACM0 monitor
 3. Enable `permit_join` in Zigbee2MQTT.
 4. Flash/reboot device.
 5. Wait for interview; device should expose temperature, humidity, and CO2 entities.
+6. If you change converter reporting settings later, run Zigbee2MQTT **Reconfigure** for this device (or re-pair) so new reporting is applied.
 
 Expected runtime logs after join:
 - `zigbee: Rejoined network PAN=... CH=... SHORT=...` (or joined network log)
 - `sensors: SHTC3 initialized on I2C 0x70`
 - `sensors: SCD4X initialized on I2C 0x62`
-- `zigbee: Reported temp=<temp> C humidity=<humidity> % co2=<ppm> ppm`
+- `zigbee: Updated temp=<temp> C humidity=<humidity> % co2=<ppm> ppm`
 
 ## Notes
 - Firmware currently uses Zigbee channel **11** only.
 - SCD4X runs periodic measurement mode and publishes latest ppm value each report cycle.
-- Coordinator destination endpoint is discovered dynamically via ZDO Active EP request on join/rejoin (fallback endpoint: `1`).
-- Zigbee2MQTT device `debounce` is set to `10` for this sensor setup.
+- Current external converter default reporting:
+  - Temperature: min 30 s, max 60 s, change 0.1 C (`10`)
+  - Humidity: min 30 s, max 60 s, change 1.0 %RH (`100`)
+  - CO2: min 30 s, max 60 s, change 1 ppm (`0.000001` in raw cluster units)
 - If pairing fails, run `idf.py -p /dev/ttyACM0 erase-flash flash`.
 
 ## License
