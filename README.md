@@ -7,7 +7,7 @@ Minimal ESP-IDF Zigbee end-device for **Seeed XIAO ESP32-C6** + **SHTC3** + **SC
 - Reports:
   - Temperature (cluster `0x0402`)
   - Humidity (cluster `0x0405`)
-  - Carbon dioxide (cluster `0x040D`)
+  - Carbon dioxide (cluster `0x040D`, when CO2 sensor is enabled)
 - Sensor update interval: **30 seconds** (publish cadence follows coordinator reporting config)
 - Includes external Zigbee2MQTT converter: `z2m_converter.js`
 
@@ -38,6 +38,18 @@ source ~/esp/esp-idf/export.sh
 idf.py -p /dev/ttyACM0 flash
 idf.py -p /dev/ttyACM0 monitor
 ```
+
+## Enable or disable CO2 sensor
+CO2 support is controlled by `CONFIG_APP_ENABLE_CO2_SENSOR`.
+
+- Default in this repository: **enabled** (`CONFIG_APP_ENABLE_CO2_SENSOR=y` in `sdkconfig`)
+- To disable (temperature/humidity-only hardware):
+  1. Run `idf.py menuconfig`
+  2. Go to `Application Config`
+  3. Uncheck `Enable SCD4X CO2 sensor`
+  4. Rebuild and flash
+
+When CO2 is disabled, the Zigbee model changes to `XIAO-SHTC3` and CO2 cluster/entity is not exposed.
 
 ## Zigbee2MQTT setup and pairing
 1. Configure Zigbee2MQTT to load `z2m_converter.js` as an external converter in `configuration.yaml`:
