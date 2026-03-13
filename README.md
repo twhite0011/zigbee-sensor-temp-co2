@@ -70,12 +70,13 @@ Expected runtime logs after join:
 - `zigbee: Updated temp=<temp> C humidity=<humidity> % co2=<ppm> ppm`
 
 ## Notes
-- Firmware currently uses Zigbee channel **11** only.
+- Firmware scans all Zigbee channels allowed by `ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK` when joining a new network.
+- After changing the coordinator Zigbee channel or moving the device to a different network, run `idf.py -p /dev/ttyACM0 erase-flash flash` before re-pairing so saved Zigbee state does not force a rejoin on the old channel.
 - SCD4X runs periodic measurement mode and publishes latest ppm value each report cycle.
 - Current external converter default reporting:
-  - Temperature: min 30 s, max 60 s, change 0.1 C (`10`)
-  - Humidity: min 30 s, max 60 s, change 1.0 %RH (`100`)
-  - CO2: min 30 s, max 60 s, change 1 ppm (`0.000001` in raw cluster units)
+  - Temperature: min 40 s, max 60 s, change 1.0 C (`100`)
+  - Humidity: min 40 s, max 60 s, change 1.0 %RH (`100`)
+  - CO2: min 40 s, max 60 s, change 5 ppm (`0.000005` in raw cluster units)
 - If pairing fails, run `idf.py -p /dev/ttyACM0 erase-flash flash`.
 
 ## License
