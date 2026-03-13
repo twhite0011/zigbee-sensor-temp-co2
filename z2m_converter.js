@@ -1,8 +1,8 @@
 import * as m from 'zigbee-herdsman-converters/lib/modernExtend';
 
-const tempReporting = {min: 30, max: 60, change: 10};
-const humidityReporting = {min: 30, max: 60, change: 100};
-const co2Reporting = {min: 30, max: 60, change: 0.000001};
+const tempReporting = {min: 40, max: 60, change: 100};
+const humidityReporting = {min: 40, max: 60, change: 100};
+const co2Reporting = {min: 40, max: 60, change: 0.000005};
 
 const base = {
     vendor: 'DIY',

@@ -12,8 +12,8 @@
 
 static const char *TAG = "main";
 
-#define ZIGBEE_PRIMARY_CHANNEL_MASK   (1UL << 11)
-#define ZIGBEE_SECONDARY_CHANNEL_MASK (1UL << 11)
+#define ZIGBEE_PRIMARY_CHANNEL_MASK   ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK
+#define ZIGBEE_SECONDARY_CHANNEL_MASK ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK
 #define REPORT_INTERVAL_MS            (30000)
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
